@@ -1,0 +1,61 @@
+trigger:
+- main  # adjust if needed
+
+variables:
+  imageName: 'paymasterapi'
+  acrName: 'PayMaster'
+  resourceGroup: 'PayMaster'
+  containerName: 'pay-master-container'
+  dnsLabel: 'paymastervenkat123'  # must be globally unique
+  containerPort: 80
+
+stages:
+- stage: BuildAndPush
+  displayName: Build and Push Docker Image
+  jobs:
+  - job: Build
+    pool: 'Default'
+    steps:
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'ACRConnection'  # ✅ ACR service connection name
+        repository: '$(imageName)'
+        command: 'buildAndPush'
+        Dockerfile: 'PayMaster/Dockerfile'
+        tags: |
+          latest
+
+- stage: DeployToACI
+  displayName: Deploy to Azure Container Instance
+  dependsOn: BuildAndPush
+  jobs:
+  - job: Deploy
+    pool: 'Default'
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'AzureRMConnection'  # Azure RM service connection
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          # Optional: Delete old container to avoid conflict
+          az container delete --name $(containerName) --resource-group $(resourceGroup) --yes || true
+
+          # Create container with ACR credentials and secure environment vars
+          az container create \
+            --resource-group $(resourceGroup) \
+            --name $(containerName) \
+            --image $(acrName).azurecr.io/$(imageName):latest \
+            --dns-name-label $(dnsLabel) \
+            --ports $(containerPort) \
+            --cpu 1 \
+            --memory 1.5 \
+            --os-type Linux \
+            --registry-login-server $(acrName).azurecr.io \
+            --registry-username $(ACR_USERNAME) \
+            --registry-password $(ACR_PASSWORD) \
+            --environment-variables \
+              ConnectionStrings__PayMasterConnection="$(PayMasterConnection)" \
+              Jwt__Key="$(JwtKey)" \
+              Jwt__Issuer="PayMasterAuth" \
+              Jwt__Audience="Audience"

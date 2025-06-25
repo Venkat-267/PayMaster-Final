@@ -1,0 +1,63 @@
+##############################
+# General .NET build outputs #
+##############################
+**/bin/
+**/obj/
+**/artifacts/
+
+###############################
+# User- and tool-specific files
+###############################
+**/*.user
+**/*.suo
+**/*.userosscache
+**/*.sln.docstates
+.vs/
+.idea/
+.vscode/
+
+##############################
+# ASP.NET Core Configuration #
+##############################
+**/appsettings.json
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/appsettings.*.json       # Optional – ignore env-specific settings
+**/*.secret.json
+
+#################################
+# Node.js / Bower (for Web apps)
+#################################
+**/node_modules/
+**/bower_components/
+**/wwwroot/lib/
+**/wwwroot/dist/
+
+##########################
+# NuGet / Package outputs
+##########################
+**/packages/
+**/*.nupkg
+**/*.snupkg
+**/*.nuspec
+**/project.lock.json
+**/project.assets.json
+**/*.csproj.nuget.*
+
+##############################
+# Entity Framework Migrations
+##############################
+**/Migrations/
+
+##########################
+# OS / Miscellaneous files
+##########################
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.log
+*.tmp
+*.bak
+*.swp
+/PayRollManagement/PayRollManagement/appsettings.json

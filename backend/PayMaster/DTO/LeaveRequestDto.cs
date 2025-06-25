@@ -1,0 +1,16 @@
+﻿namespace PayMaster.DTO
+{
+    public class LeaveRequestDto
+    {
+        public int? LeaveId { get; set; }
+        public int EmployeeId { get; set; }
+        public string LeaveType { get; set; }
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        public string Reason { get; set; }
+        public string Status { get; set; }
+        public int? ApprovedBy { get; set; }
+        public DateTime? AppliedDate { get; set; }
+        public DateTime? ApprovedDate { get; set; }
+    }
+}
