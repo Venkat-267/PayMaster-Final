@@ -148,9 +148,9 @@ const BenefitManagement = ({ employeeId, employeeName, onClose }) => {
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'INR'
     }).format(amount);
   };
 
@@ -406,7 +406,7 @@ const BenefitManagement = ({ employeeId, employeeName, onClose }) => {
                   </Col>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Amount ($)</Form.Label>
+                      <Form.Label>Amount (₹)</Form.Label>
                       <Field
                         type="number"
                         name="amount"

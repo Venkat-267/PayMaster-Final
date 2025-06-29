@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Form, Row, Col, Modal, Badge, Tabs, Tab, Alert, Spinner } from 'react-bootstrap';
-import { Search, DollarSign, Plus, Eye, CheckCircle, CreditCard, Calendar, User, FileText, Settings } from 'lucide-react';
+import { Search, DollarSign, Plus, Eye, CheckCircle, CreditCard, Calendar, User, FileText, Settings, Filter, AlertTriangle } from 'lucide-react';
 import { Formik, Form as FormikForm, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import { useAuth } from '../../context/AuthContext';
@@ -20,17 +20,24 @@ const PayrollManagement = () => {
     year: '',
     status: ''
   });
+  
+  // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState(false);
+  
+  // Selected items
   const [selectedPayroll, setSelectedPayroll] = useState(null);
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [paymentMode, setPaymentMode] = useState('');
+  
   const { hasAccess, ROLES, getCurrentUser } = useAuth();
   
   const currentUser = getCurrentUser();
   const canCreatePayroll = hasAccess([ROLES.ADMIN.id, ROLES.PAYROLL_PROCESSOR.id]);
-  const canVerifyPayroll = hasAccess([ROLES.ADMIN.id, ROLES.MANAGER.id]);
+  const canVerifyPayroll = hasAccess([ROLES.ADMIN.id, ROLES.MANAGER.id, ROLES.HR_MANAGER.id, ROLES.PAYROLL_PROCESSOR.id]);
+  const canMarkAsPaid = hasAccess([ROLES.ADMIN.id, ROLES.PAYROLL_PROCESSOR.id]);
 
   const PayrollSchema = Yup.object().shape({
     employeeId: Yup.number().required('Employee is required'),
@@ -58,7 +65,8 @@ const PayrollManagement = () => {
       setLoading(true);
       await Promise.all([
         fetchEmployees(),
-        fetchCurrentPolicy()
+        fetchCurrentPolicy(),
+        fetchPayrolls() // Use the new endpoint
       ]);
     } catch (error) {
       toast.error('Failed to load initial data');
@@ -71,10 +79,7 @@ const PayrollManagement = () => {
     try {
       const result = await employeeService.getAllEmployees();
       if (result.success) {
-        const employeeData = result.data || [];
-        setEmployees(employeeData);
-        // After employees are loaded, fetch payrolls
-        await fetchPayrolls(employeeData);
+        setEmployees(result.data || []);
       } else {
         toast.error('Failed to fetch employees');
         setEmployees([]);
@@ -97,33 +102,17 @@ const PayrollManagement = () => {
     }
   };
 
-  const fetchPayrolls = async (employeeData = employees) => {
+  const fetchPayrolls = async () => {
     try {
       setLoading(true);
       
-      if (searchFilters.employeeId) {
-        // If specific employee is selected, get their history
-        const result = await payrollService.getPayrollHistory(searchFilters.employeeId);
-        if (result.success) {
-          const employee = employeeData.find(emp => emp.EmployeeId === parseInt(searchFilters.employeeId));
-          const payrollsWithEmployeeInfo = (result.data || []).map(payroll => ({
-            ...payroll,
-            employeeName: employee ? `${employee.FirstName} ${employee.LastName}` : `Employee ${payroll.EmployeeId}`,
-            employeeCode: `EMP${payroll.EmployeeId.toString().padStart(3, '0')}`,
-            department: employee?.Department || 'Unknown'
-          }));
-          setPayrolls(applyFilters(payrollsWithEmployeeInfo));
-        } else {
-          setPayrolls([]);
-        }
+      // Use the new all-details endpoint
+      const result = await payrollService.getAllPayrolls();
+      if (result.success) {
+        setPayrolls(applyFilters(result.data || []));
       } else {
-        // Get payroll history for all employees
-        const result = await payrollService.getAllPayrolls(employeeData);
-        if (result.success) {
-          setPayrolls(applyFilters(result.data || []));
-        } else {
-          setPayrolls([]);
-        }
+        toast.error('Failed to fetch payrolls');
+        setPayrolls([]);
       }
     } catch (error) {
       console.error('Failed to fetch payrolls:', error);
@@ -137,6 +126,9 @@ const PayrollManagement = () => {
   const applyFilters = (payrollData) => {
     let filtered = payrollData;
     
+    if (searchFilters.employeeId) {
+      filtered = filtered.filter(p => p.EmployeeId === parseInt(searchFilters.employeeId));
+    }
     if (searchFilters.month) {
       filtered = filtered.filter(p => p.Month === parseInt(searchFilters.month));
     }
@@ -144,7 +136,6 @@ const PayrollManagement = () => {
       filtered = filtered.filter(p => p.Year === parseInt(searchFilters.year));
     }
     if (searchFilters.status) {
-      // Map display status to API status
       const statusMap = {
         'Generated': 'Created',
         'Verified': 'Verified', 
@@ -154,13 +145,13 @@ const PayrollManagement = () => {
       filtered = filtered.filter(p => p.Status === apiStatus);
     }
 
-    return filtered;
+    return filtered.sort((a, b) => new Date(b.ProcessedDate) - new Date(a.ProcessedDate));
   };
 
-  // Trigger payroll fetch when filters change
   useEffect(() => {
-    if (employees.length > 0) {
-      fetchPayrolls();
+    if (payrolls.length > 0) {
+      const filtered = applyFilters(payrolls);
+      setPayrolls(filtered);
     }
   }, [searchFilters]);
 
@@ -177,7 +168,7 @@ const PayrollManagement = () => {
         toast.success('Payroll generated successfully');
         setShowCreateModal(false);
         resetForm();
-        fetchPayrolls(); // Refresh payroll list
+        fetchPayrolls(); // Refresh the list
       } else {
         toast.error(result.message);
       }
@@ -195,7 +186,14 @@ const PayrollManagement = () => {
       if (result.success) {
         toast.success('Payroll verified successfully');
         setShowVerifyModal(false);
-        fetchPayrolls(); // Refresh payroll list
+        setShowDetailModal(false);
+        
+        // Update the payroll status locally
+        setPayrolls(payrolls.map(p => 
+          p.PayrollId === payrollId 
+            ? { ...p, Status: 'Verified', IsVerified: true, VerifiedBy: currentUser.id, VerifiedDate: new Date().toISOString() }
+            : p
+        ));
       } else {
         toast.error(result.message);
       }
@@ -204,14 +202,22 @@ const PayrollManagement = () => {
     }
   };
 
-  const handleMarkAsPaid = async (payrollId, paymentMode) => {
+  const handleMarkAsPaid = async (payrollId, paymentModeValue) => {
     try {
-      const result = await payrollService.markPayrollAsPaid(payrollId, paymentMode);
+      const result = await payrollService.markPayrollAsPaid(payrollId, paymentModeValue);
       
       if (result.success) {
         toast.success('Payroll marked as paid successfully');
         setShowPayModal(false);
-        fetchPayrolls(); // Refresh payroll list
+        setShowDetailModal(false);
+        setPaymentMode('');
+        
+        // Update the payroll status locally
+        setPayrolls(payrolls.map(p => 
+          p.PayrollId === payrollId 
+            ? { ...p, Status: 'Paid', IsPaid: true, PaidDate: new Date().toISOString(), PaymentMode: paymentModeValue }
+            : p
+        ));
       } else {
         toast.error(result.message);
       }
@@ -232,7 +238,7 @@ const PayrollManagement = () => {
         toast.success('Payroll policy updated successfully');
         setShowPolicyModal(false);
         resetForm();
-        fetchCurrentPolicy(); // Refresh current policy
+        fetchCurrentPolicy();
       } else {
         toast.error(result.message);
       }
@@ -241,6 +247,23 @@ const PayrollManagement = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Action handlers
+  const handleViewDetails = (payroll) => {
+    setSelectedPayroll(payroll);
+    setShowDetailModal(true);
+  };
+
+  const handleVerifyClick = (payroll) => {
+    setSelectedPayroll(payroll);
+    setShowVerifyModal(true);
+  };
+
+  const handleMarkAsPaidClick = (payroll) => {
+    setSelectedPayroll(payroll);
+    setPaymentMode('');
+    setShowPayModal(true);
   };
 
   const getStatusBadgeColor = (status) => {
@@ -276,17 +299,32 @@ const PayrollManagement = () => {
     };
   };
 
-  const getEmployeePayrollHistory = (employeeId) => {
-    return payrolls.filter(p => p.EmployeeId === employeeId)
-      .sort((a, b) => new Date(b.ProcessedDate) - new Date(a.ProcessedDate));
+  // Button visibility logic
+  const shouldShowVerifyButton = (payroll) => {
+    return canVerifyPayroll && payroll.Status === 'Created' && !payroll.IsVerified;
+  };
+
+  const shouldShowMarkAsPaidButton = (payroll) => {
+    return canMarkAsPaid && payroll.Status === 'Verified' && !payroll.IsPaid;
+  };
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR'
+    }).format(amount);
   };
 
   const stats = getPayrollStats();
 
   return (
     <div>
+      {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>Payroll Management</h2>
+        <div>
+          <h2>Payroll Management</h2>
+          <p className="text-muted mb-0">Manage employee payrolls and processing</p>
+        </div>
         <div className="d-flex gap-2">
           <Button variant="outline-secondary" onClick={() => setShowPolicyModal(true)}>
             <Settings size={18} className="me-1" />
@@ -304,14 +342,14 @@ const PayrollManagement = () => {
       {/* Stats Cards */}
       <Row className="mb-4">
         <Col md={3}>
-          <Card>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body>
               <div className="d-flex align-items-center">
                 <div className="bg-primary bg-opacity-10 p-3 rounded-circle me-3">
                   <FileText size={24} className="text-primary" />
                 </div>
                 <div>
-                  <h6 className="mb-1">Total Payrolls</h6>
+                  <h6 className="mb-1 text-muted">Total Payrolls</h6>
                   <h3 className="mb-0">{stats.total}</h3>
                 </div>
               </div>
@@ -319,14 +357,14 @@ const PayrollManagement = () => {
           </Card>
         </Col>
         <Col md={3}>
-          <Card>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body>
               <div className="d-flex align-items-center">
                 <div className="bg-warning bg-opacity-10 p-3 rounded-circle me-3">
-                  <Calendar size={24} className="text-warning" />
+                  <AlertTriangle size={24} className="text-warning" />
                 </div>
                 <div>
-                  <h6 className="mb-1">Generated</h6>
+                  <h6 className="mb-1 text-muted">Pending Verification</h6>
                   <h3 className="mb-0">{stats.generated}</h3>
                 </div>
               </div>
@@ -334,14 +372,14 @@ const PayrollManagement = () => {
           </Card>
         </Col>
         <Col md={3}>
-          <Card>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body>
               <div className="d-flex align-items-center">
                 <div className="bg-info bg-opacity-10 p-3 rounded-circle me-3">
                   <CheckCircle size={24} className="text-info" />
                 </div>
                 <div>
-                  <h6 className="mb-1">Verified</h6>
+                  <h6 className="mb-1 text-muted">Verified</h6>
                   <h3 className="mb-0">{stats.verified}</h3>
                 </div>
               </div>
@@ -349,15 +387,15 @@ const PayrollManagement = () => {
           </Card>
         </Col>
         <Col md={3}>
-          <Card>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body>
               <div className="d-flex align-items-center">
                 <div className="bg-success bg-opacity-10 p-3 rounded-circle me-3">
                   <DollarSign size={24} className="text-success" />
                 </div>
                 <div>
-                  <h6 className="mb-1">Total Paid</h6>
-                  <h3 className="mb-0">${stats.totalAmount.toLocaleString()}</h3>
+                  <h6 className="mb-1 text-muted">Total Paid</h6>
+                  <h3 className="mb-0">{formatCurrency(stats.totalAmount)}</h3>
                 </div>
               </div>
             </Card.Body>
@@ -367,283 +405,444 @@ const PayrollManagement = () => {
 
       {/* Current Policy Display */}
       {currentPolicy && (
-        <Card className="mb-4">
-          <Card.Header>
-            <h5 className="mb-0">Current Payroll Policy</h5>
+        <Card className="border-0 shadow-sm mb-4">
+          <Card.Header className="bg-white border-bottom">
+            <div className="d-flex justify-content-between align-items-center">
+              <h5 className="mb-0">Current Payroll Policy</h5>
+              <Button variant="outline-primary" size="sm" onClick={() => setShowPolicyModal(true)}>
+                <Settings size={16} className="me-1" />
+                Update Policy
+              </Button>
+            </div>
           </Card.Header>
           <Card.Body>
             <Row>
               <Col md={4}>
-                <p><strong>Default PF Percentage:</strong> {currentPolicy.DefaultPFPercent}%</p>
+                <div className="text-center">
+                  <h6 className="text-muted">Default PF Percentage</h6>
+                  <h4 className="text-primary">{currentPolicy.DefaultPFPercent}%</h4>
+                </div>
               </Col>
               <Col md={4}>
-                <p><strong>Overtime Rate:</strong> ${currentPolicy.OvertimeRatePerHour}/hour</p>
+                <div className="text-center">
+                  <h6 className="text-muted">Overtime Rate</h6>
+                  <h4 className="text-success">{formatCurrency(currentPolicy.OvertimeRatePerHour)}/hour</h4>
+                </div>
               </Col>
               <Col md={4}>
-                <p><strong>Effective From:</strong> {new Date(currentPolicy.EffectiveFrom).toLocaleDateString()}</p>
+                <div className="text-center">
+                  <h6 className="text-muted">Effective From</h6>
+                  <h6 className="text-info">{new Date(currentPolicy.EffectiveFrom).toLocaleDateString()}</h6>
+                </div>
               </Col>
             </Row>
           </Card.Body>
         </Card>
       )}
 
-      <Tabs defaultActiveKey="payrolls" className="mb-4">
-        <Tab eventKey="payrolls" title="Payroll Records">
-          <Card>
-            <Card.Body>
-              {/* Search Filters */}
-              <Row className="mb-3">
-                <Col md={3}>
-                  <Form.Group>
-                    <Form.Label>Employee</Form.Label>
-                    <Form.Select
-                      value={searchFilters.employeeId}
-                      onChange={(e) => setSearchFilters({...searchFilters, employeeId: e.target.value})}
-                    >
-                      <option value="">All Employees</option>
-                      {employees.map(emp => (
-                        <option key={emp.EmployeeId} value={emp.EmployeeId}>
-                          {emp.FirstName} {emp.LastName} (ID: {emp.EmployeeId})
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={2}>
-                  <Form.Group>
-                    <Form.Label>Month</Form.Label>
-                    <Form.Select
-                      value={searchFilters.month}
-                      onChange={(e) => setSearchFilters({...searchFilters, month: e.target.value})}
-                    >
-                      <option value="">All Months</option>
-                      {Array.from({length: 12}, (_, i) => (
-                        <option key={i + 1} value={i + 1}>
-                          {new Date(2025, i, 1).toLocaleString('default', { month: 'long' })}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={2}>
-                  <Form.Group>
-                    <Form.Label>Year</Form.Label>
-                    <Form.Select
-                      value={searchFilters.year}
-                      onChange={(e) => setSearchFilters({...searchFilters, year: e.target.value})}
-                    >
-                      <option value="">All Years</option>
-                      <option value="2025">2025</option>
-                      <option value="2024">2024</option>
-                      <option value="2023">2023</option>
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={2}>
-                  <Form.Group>
-                    <Form.Label>Status</Form.Label>
-                    <Form.Select
-                      value={searchFilters.status}
-                      onChange={(e) => setSearchFilters({...searchFilters, status: e.target.value})}
-                    >
-                      <option value="">All Status</option>
-                      <option value="Generated">Generated</option>
-                      <option value="Verified">Verified</option>
-                      <option value="Paid">Paid</option>
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={3} className="d-flex align-items-end">
-                  <Button 
-                    variant="outline-secondary" 
-                    onClick={() => setSearchFilters({ employeeId: '', month: '', year: '', status: '' })}
-                  >
-                    Clear Filters
-                  </Button>
-                </Col>
-              </Row>
+      {/* Pending Actions Alert */}
+      {(stats.generated > 0 || stats.verified > 0) && (
+        <Alert variant="warning" className="mb-4">
+          <div className="d-flex align-items-center">
+            <AlertTriangle size={20} className="me-2" />
+            <div className="flex-grow-1">
+              <strong>Action Required:</strong> 
+              {stats.generated > 0 && ` ${stats.generated} payroll(s) need verification.`}
+              {stats.verified > 0 && ` ${stats.verified} verified payroll(s) need to be marked as paid.`}
+            </div>
+          </div>
+        </Alert>
+      )}
 
-              {loading ? (
-                <div className="text-center py-4">
-                  <Spinner animation="border" role="status">
-                    <span className="visually-hidden">Loading...</span>
-                  </Spinner>
-                  <p className="mt-2">Loading payroll data...</p>
-                </div>
-              ) : (
-                <Table responsive hover>
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th>Period</th>
-                      <th>Gross Pay</th>
-                      <th>Deductions</th>
-                      <th>Net Pay</th>
-                      <th>Status</th>
-                      <th>Processed Date</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payrolls.map((payroll) => (
-                      <tr key={payroll.PayrollId}>
-                        <td>
-                          <div>
-                            <strong>{payroll.employeeName || `Employee ${payroll.EmployeeId}`}</strong>
-                            <br />
-                            <small className="text-muted">{payroll.employeeCode || `EMP${payroll.EmployeeId}`}</small>
-                          </div>
-                        </td>
-                        <td>
-                          {new Date(payroll.Year, payroll.Month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
-                        </td>
-                        <td>${(payroll.GrossPay || 0).toLocaleString()}</td>
-                        <td>${((payroll.EmployeePF || 0) + (payroll.IncomeTax || 0)).toLocaleString()}</td>
-                        <td><strong>${(payroll.NetPay || 0).toLocaleString()}</strong></td>
-                        <td>
-                          <Badge bg={getStatusBadgeColor(payroll.Status)}>
-                            {mapApiStatusToDisplayStatus(payroll.Status)}
-                          </Badge>
-                        </td>
-                        <td>{new Date(payroll.ProcessedDate).toLocaleDateString()}</td>
-                        <td>
-                          <div className="d-flex gap-2">
-                            <Button 
-                              variant="outline-info" 
-                              size="sm"
-                              onClick={() => {
-                                setSelectedPayroll(payroll);
-                                // Show payroll details modal (implement if needed)
-                              }}
-                              title="View Details"
-                            >
-                              <Eye size={14} />
-                            </Button>
-                            
-                            {canVerifyPayroll && payroll.Status === 'Created' && (
-                              <Button 
-                                variant="outline-success" 
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedPayroll(payroll);
-                                  setShowVerifyModal(true);
-                                }}
-                                title="Verify Payroll"
-                              >
-                                <CheckCircle size={14} />
-                              </Button>
-                            )}
-                            
-                            {payroll.Status === 'Verified' && (
-                              <Button 
-                                variant="outline-primary" 
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedPayroll(payroll);
-                                  setShowPayModal(true);
-                                }}
-                                title="Mark as Paid"
-                              >
-                                <CreditCard size={14} />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              )}
+      {/* Payroll List */}
+      <Card className="border-0 shadow-sm">
+        <Card.Header className="bg-white border-bottom">
+          <div className="d-flex justify-content-between align-items-center">
+            <h5 className="mb-0">Payroll Records</h5>
+            <Badge bg="primary" className="px-3 py-2">
+              {payrolls.length} Records
+            </Badge>
+          </div>
+        </Card.Header>
+        <Card.Body>
+          {/* Filters */}
+          <Row className="mb-4">
+            <Col md={3}>
+              <Form.Group>
+                <Form.Label className="d-flex align-items-center">
+                  <User size={16} className="me-1" />
+                  Employee
+                </Form.Label>
+                <Form.Select
+                  value={searchFilters.employeeId}
+                  onChange={(e) => setSearchFilters({...searchFilters, employeeId: e.target.value})}
+                >
+                  <option value="">All Employees</option>
+                  {employees.map(emp => (
+                    <option key={emp.EmployeeId} value={emp.EmployeeId}>
+                      {emp.FirstName} {emp.LastName} (ID: {emp.EmployeeId})
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            </Col>
+            <Col md={2}>
+              <Form.Group>
+                <Form.Label className="d-flex align-items-center">
+                  <Calendar size={16} className="me-1" />
+                  Month
+                </Form.Label>
+                <Form.Select
+                  value={searchFilters.month}
+                  onChange={(e) => setSearchFilters({...searchFilters, month: e.target.value})}
+                >
+                  <option value="">All Months</option>
+                  {Array.from({length: 12}, (_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {new Date(2025, i, 1).toLocaleString('default', { month: 'long' })}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            </Col>
+            <Col md={2}>
+              <Form.Group>
+                <Form.Label>Year</Form.Label>
+                <Form.Select
+                  value={searchFilters.year}
+                  onChange={(e) => setSearchFilters({...searchFilters, year: e.target.value})}
+                >
+                  <option value="">All Years</option>
+                  <option value="2025">2025</option>
+                  <option value="2024">2024</option>
+                  <option value="2023">2023</option>
+                </Form.Select>
+              </Form.Group>
+            </Col>
+            <Col md={2}>
+              <Form.Group>
+                <Form.Label className="d-flex align-items-center">
+                  <Filter size={16} className="me-1" />
+                  Status
+                </Form.Label>
+                <Form.Select
+                  value={searchFilters.status}
+                  onChange={(e) => setSearchFilters({...searchFilters, status: e.target.value})}
+                >
+                  <option value="">All Status</option>
+                  <option value="Generated">Generated</option>
+                  <option value="Verified">Verified</option>
+                  <option value="Paid">Paid</option>
+                </Form.Select>
+              </Form.Group>
+            </Col>
+            <Col md={3} className="d-flex align-items-end">
+              <Button 
+                variant="outline-secondary" 
+                onClick={() => setSearchFilters({ employeeId: '', month: '', year: '', status: '' })}
+                className="w-100"
+              >
+                Clear Filters
+              </Button>
+            </Col>
+          </Row>
 
-              {!loading && payrolls.length === 0 && (
-                <div className="text-center py-4">
-                  <FileText size={48} className="text-muted mb-3" />
-                  <h5 className="text-muted">No Payroll Records Found</h5>
-                  <p className="text-muted">Generate payroll to get started or adjust your filters.</p>
-                  {canCreatePayroll && (
-                    <Button variant="primary" onClick={() => setShowCreateModal(true)}>
-                      <Plus size={18} className="me-1" />
-                      Generate First Payroll
-                    </Button>
-                  )}
-                </div>
-              )}
-            </Card.Body>
-          </Card>
-        </Tab>
-
-        <Tab eventKey="history" title="Employee History">
-          <Card>
-            <Card.Body>
-              <Row className="mb-3">
-                <Col md={4}>
-                  <Form.Group>
-                    <Form.Label>Select Employee</Form.Label>
-                    <Form.Select
-                      value={selectedEmployee?.EmployeeId || ''}
-                      onChange={(e) => {
-                        const employee = employees.find(emp => emp.EmployeeId === parseInt(e.target.value));
-                        setSelectedEmployee(employee);
-                      }}
-                    >
-                      <option value="">Choose an employee...</option>
-                      {employees.map(emp => (
-                        <option key={emp.EmployeeId} value={emp.EmployeeId}>
-                          {emp.FirstName} {emp.LastName} ({emp.EmployeeId})
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-              </Row>
-
-              {selectedEmployee && (
-                <div>
-                  <h5 className="mb-3">Payroll History - {selectedEmployee.FirstName} {selectedEmployee.LastName}</h5>
-                  <Table responsive hover>
-                    <thead>
-                      <tr>
-                        <th>Period</th>
-                        <th>Gross Pay</th>
-                        <th>Deductions</th>
-                        <th>Net Pay</th>
-                        <th>Status</th>
-                        <th>Processed Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {getEmployeePayrollHistory(selectedEmployee.EmployeeId).map((payroll) => (
-                        <tr key={payroll.PayrollId}>
-                          <td>
+          {/* Payroll Table */}
+          {loading ? (
+            <div className="text-center py-5">
+              <Spinner animation="border" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </Spinner>
+              <p className="mt-2 text-muted">Loading payroll data...</p>
+            </div>
+          ) : payrolls.length > 0 ? (
+            <Table responsive hover className="mb-0">
+              <thead className="bg-light">
+                <tr>
+                  <th className="border-0">Employee</th>
+                  <th className="border-0">Period</th>
+                  <th className="border-0">Gross Pay</th>
+                  <th className="border-0">Deductions</th>
+                  <th className="border-0">Net Pay</th>
+                  <th className="border-0">Status</th>
+                  <th className="border-0">Processed Date</th>
+                  <th className="border-0">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payrolls.map((payroll) => (
+                  <tr key={payroll.PayrollId} className={payroll.Status === 'Created' ? 'table-warning' : payroll.Status === 'Verified' ? 'table-info' : ''}>
+                    <td>
+                      <div className="d-flex align-items-center">
+                        <div className="bg-primary bg-opacity-10 rounded-circle p-2 me-3">
+                          <User size={16} className="text-primary" />
+                        </div>
+                        <div>
+                          <div className="fw-medium">{payroll.EmployeeName || `Employee ${payroll.EmployeeId}`}</div>
+                          <small className="text-muted">EMP{payroll.EmployeeId.toString().padStart(3, '0')}</small>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="d-flex align-items-center">
+                        <Calendar size={16} className="text-muted me-2" />
+                        <div>
+                          <div className="fw-medium">
                             {new Date(payroll.Year, payroll.Month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
-                          </td>
-                          <td>${(payroll.GrossPay || 0).toLocaleString()}</td>
-                          <td>${((payroll.EmployeePF || 0) + (payroll.IncomeTax || 0)).toLocaleString()}</td>
-                          <td><strong>${(payroll.NetPay || 0).toLocaleString()}</strong></td>
-                          <td>
-                            <Badge bg={getStatusBadgeColor(payroll.Status)}>
-                              {mapApiStatusToDisplayStatus(payroll.Status)}
-                            </Badge>
-                          </td>
-                          <td>
-                            {new Date(payroll.ProcessedDate).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
-                  
-                  {getEmployeePayrollHistory(selectedEmployee.EmployeeId).length === 0 && (
-                    <div className="text-center py-4">
-                      <p className="text-muted">No payroll history found for this employee.</p>
-                    </div>
-                  )}
-                </div>
+                          </div>
+                          <small className="text-muted">{payroll.Month}/{payroll.Year}</small>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="fw-medium text-success">
+                        {formatCurrency(payroll.GrossPay || 0)}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="fw-medium text-danger">
+                        {formatCurrency((payroll.EmployeePF || 0) + (payroll.IncomeTax || 0))}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="fw-bold text-primary">
+                        {formatCurrency(payroll.NetPay || 0)}
+                      </div>
+                    </td>
+                    <td>
+                      <Badge bg={getStatusBadgeColor(payroll.Status)} className="px-3 py-2">
+                        {mapApiStatusToDisplayStatus(payroll.Status)}
+                      </Badge>
+                    </td>
+                    <td>
+                      <div className="text-muted">
+                        {new Date(payroll.ProcessedDate).toLocaleDateString()}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="d-flex gap-1">
+                        {/* View Details Button - Always Available */}
+                        <Button 
+                          variant="outline-info" 
+                          size="sm"
+                          onClick={() => handleViewDetails(payroll)}
+                          title="View Details"
+                        >
+                          <Eye size={14} />
+                        </Button>
+                        
+                        {/* Verify Button - Only for Created/Generated payrolls */}
+                        {shouldShowVerifyButton(payroll) && (
+                          <Button 
+                            variant="success" 
+                            size="sm"
+                            onClick={() => handleVerifyClick(payroll)}
+                            title="Verify Payroll"
+                            className="text-white"
+                          >
+                            <CheckCircle size={14} />
+                          </Button>
+                        )}
+                        
+                        {/* Mark as Paid Button - Only for Verified payrolls */}
+                        {shouldShowMarkAsPaidButton(payroll) && (
+                          <Button 
+                            variant="primary" 
+                            size="sm"
+                            onClick={() => handleMarkAsPaidClick(payroll)}
+                            title="Mark as Paid"
+                          >
+                            <CreditCard size={14} />
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : (
+            <div className="text-center py-5">
+              <FileText size={64} className="text-muted mb-3" />
+              <h5 className="text-muted">No Payroll Records Found</h5>
+              <p className="text-muted">Generate payroll to get started or adjust your filters.</p>
+              {canCreatePayroll && (
+                <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+                  <Plus size={18} className="me-1" />
+                  Generate First Payroll
+                </Button>
               )}
-            </Card.Body>
-          </Card>
-        </Tab>
-      </Tabs>
+            </div>
+          )}
+        </Card.Body>
+      </Card>
+
+      {/* Payroll Detail Modal */}
+      <Modal show={showDetailModal} onHide={() => setShowDetailModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <DollarSign size={24} className="me-2" />
+            Payroll Details
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedPayroll && (
+            <div>
+              {/* Employee Information */}
+              <Card className="border-primary mb-4">
+                <Card.Header className="bg-primary text-white">
+                  <h6 className="mb-0">Employee Information</h6>
+                </Card.Header>
+                <Card.Body>
+                  <Row>
+                    <Col md={6}>
+                      <strong>Employee:</strong> {selectedPayroll.EmployeeName || `Employee ${selectedPayroll.EmployeeId}`}
+                    </Col>
+                    <Col md={6}>
+                      <strong>Employee Code:</strong> EMP{selectedPayroll.EmployeeId.toString().padStart(3, '0')}
+                    </Col>
+                  </Row>
+                  <Row className="mt-2">
+                    <Col md={6}>
+                      <strong>Period:</strong> {new Date(selectedPayroll.Year, selectedPayroll.Month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                    </Col>
+                    <Col md={6}>
+                      <strong>Processed By:</strong> {selectedPayroll.ProcessedByName || `User ${selectedPayroll.ProcessedBy}`}
+                    </Col>
+                  </Row>
+                </Card.Body>
+              </Card>
+
+              {/* Payroll Breakdown */}
+              <Row className="mb-4">
+                <Col md={6}>
+                  <Card className="border-success h-100">
+                    <Card.Header className="bg-success text-white">
+                      <h6 className="mb-0">Earnings</h6>
+                    </Card.Header>
+                    <Card.Body>
+                      <div className="d-flex justify-content-between mb-2">
+                        <span>Gross Pay:</span>
+                        <strong>{formatCurrency(selectedPayroll.GrossPay || 0)}</strong>
+                      </div>
+                      <hr />
+                      <div className="d-flex justify-content-between">
+                        <span className="fw-bold">Total Earnings:</span>
+                        <strong className="text-success">{formatCurrency(selectedPayroll.GrossPay || 0)}</strong>
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                <Col md={6}>
+                  <Card className="border-danger h-100">
+                    <Card.Header className="bg-danger text-white">
+                      <h6 className="mb-0">Deductions</h6>
+                    </Card.Header>
+                    <Card.Body>
+                      <div className="d-flex justify-content-between mb-2">
+                        <span>Employee PF:</span>
+                        <strong>{formatCurrency(selectedPayroll.EmployeePF || 0)}</strong>
+                      </div>
+                      <div className="d-flex justify-content-between mb-2">
+                        <span>Income Tax:</span>
+                        <strong>{formatCurrency(selectedPayroll.IncomeTax || 0)}</strong>
+                      </div>
+                      <hr />
+                      <div className="d-flex justify-content-between">
+                        <span className="fw-bold">Total Deductions:</span>
+                        <strong className="text-danger">{formatCurrency((selectedPayroll.EmployeePF || 0) + (selectedPayroll.IncomeTax || 0))}</strong>
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+
+              {/* Net Pay */}
+              <Card className="border-primary">
+                <Card.Header className="bg-primary text-white">
+                  <h6 className="mb-0">Net Pay</h6>
+                </Card.Header>
+                <Card.Body className="text-center">
+                  <h2 className="text-primary mb-0">{formatCurrency(selectedPayroll.NetPay || 0)}</h2>
+                  <p className="text-muted mb-0">Take-home Amount</p>
+                </Card.Body>
+              </Card>
+
+              {/* Status and Processing Information */}
+              <Row className="mt-4">
+                <Col md={6}>
+                  <strong>Status:</strong> 
+                  <Badge bg={getStatusBadgeColor(selectedPayroll.Status)} className="ms-2">
+                    {mapApiStatusToDisplayStatus(selectedPayroll.Status)}
+                  </Badge>
+                </Col>
+                <Col md={6}>
+                  <strong>Processed Date:</strong> {new Date(selectedPayroll.ProcessedDate).toLocaleDateString()}
+                </Col>
+              </Row>
+              
+              {selectedPayroll.IsVerified && (
+                <Row className="mt-2">
+                  <Col md={6}>
+                    <strong>Verified By:</strong> {selectedPayroll.VerifiedByName || `User ${selectedPayroll.VerifiedBy}`}
+                  </Col>
+                  <Col md={6}>
+                    <strong>Verified Date:</strong> {selectedPayroll.VerifiedDate ? new Date(selectedPayroll.VerifiedDate).toLocaleDateString() : 'N/A'}
+                  </Col>
+                </Row>
+              )}
+              
+              {selectedPayroll.IsPaid && (
+                <Row className="mt-2">
+                  <Col md={6}>
+                    <strong>Payment Mode:</strong> {selectedPayroll.PaymentMode || 'N/A'}
+                  </Col>
+                  <Col md={6}>
+                    <strong>Paid Date:</strong> {selectedPayroll.PaidDate ? new Date(selectedPayroll.PaidDate).toLocaleDateString() : 'N/A'}
+                  </Col>
+                </Row>
+              )}
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          {selectedPayroll && (
+            <div className="d-flex gap-2 w-100">
+              {/* Verify Button */}
+              {shouldShowVerifyButton(selectedPayroll) && (
+                <Button 
+                  variant="success"
+                  onClick={() => handleVerifyPayroll(selectedPayroll.PayrollId)}
+                  className="text-white"
+                >
+                  <CheckCircle size={16} className="me-1" />
+                  Verify Payroll
+                </Button>
+              )}
+              
+              {/* Mark as Paid Button */}
+              {shouldShowMarkAsPaidButton(selectedPayroll) && (
+                <Button 
+                  variant="primary"
+                  onClick={() => {
+                    setShowDetailModal(false);
+                    setShowPayModal(true);
+                  }}
+                >
+                  <CreditCard size={16} className="me-1" />
+                  Mark as Paid
+                </Button>
+              )}
+              
+              <div className="ms-auto">
+                <Button variant="secondary" onClick={() => setShowDetailModal(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal.Footer>
+      </Modal>
 
       {/* Generate Payroll Modal */}
       <Modal show={showCreateModal} onHide={() => setShowCreateModal(false)} size="lg">
@@ -738,24 +937,35 @@ const PayrollManagement = () => {
       {/* Verify Payroll Modal */}
       <Modal show={showVerifyModal} onHide={() => setShowVerifyModal(false)}>
         <Modal.Header closeButton>
-          <Modal.Title>Verify Payroll</Modal.Title>
+          <Modal.Title>
+            <CheckCircle size={24} className="me-2 text-success" />
+            Verify Payroll
+          </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {selectedPayroll && (
             <div>
-              <p>Are you sure you want to verify the payroll for <strong>{selectedPayroll.employeeName || `Employee ${selectedPayroll.EmployeeId}`}</strong>?</p>
-              <Alert variant="info">
-                <Row>
-                  <Col md={6}>
-                    <p><strong>Period:</strong> {new Date(selectedPayroll.Year, selectedPayroll.Month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}</p>
-                    <p><strong>Gross Pay:</strong> ${(selectedPayroll.GrossPay || 0).toLocaleString()}</p>
-                  </Col>
-                  <Col md={6}>
-                    <p><strong>Deductions:</strong> ${((selectedPayroll.EmployeePF || 0) + (selectedPayroll.IncomeTax || 0)).toLocaleString()}</p>
-                    <p><strong>Net Pay:</strong> ${(selectedPayroll.NetPay || 0).toLocaleString()}</p>
-                  </Col>
-                </Row>
+              <Alert variant="warning">
+                <strong>Confirmation Required:</strong> Are you sure you want to verify this payroll? This action cannot be undone.
               </Alert>
+              
+              <Card className="border-info">
+                <Card.Header className="bg-info text-white">
+                  <h6 className="mb-0">Payroll Summary</h6>
+                </Card.Header>
+                <Card.Body>
+                  <Row>
+                    <Col md={6}>
+                      <p><strong>Employee:</strong> {selectedPayroll.EmployeeName || `Employee ${selectedPayroll.EmployeeId}`}</p>
+                      <p><strong>Period:</strong> {new Date(selectedPayroll.Year, selectedPayroll.Month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}</p>
+                    </Col>
+                    <Col md={6}>
+                      <p><strong>Gross Pay:</strong> {formatCurrency(selectedPayroll.GrossPay || 0)}</p>
+                      <p><strong>Net Pay:</strong> {formatCurrency(selectedPayroll.NetPay || 0)}</p>
+                    </Col>
+                  </Row>
+                </Card.Body>
+              </Card>
             </div>
           )}
         </Modal.Body>
@@ -766,6 +976,7 @@ const PayrollManagement = () => {
           <Button 
             variant="success" 
             onClick={() => handleVerifyPayroll(selectedPayroll.PayrollId)}
+            className="text-white"
           >
             <CheckCircle size={16} className="me-1" />
             Verify Payroll
@@ -776,25 +987,47 @@ const PayrollManagement = () => {
       {/* Mark as Paid Modal */}
       <Modal show={showPayModal} onHide={() => setShowPayModal(false)}>
         <Modal.Header closeButton>
-          <Modal.Title>Mark as Paid</Modal.Title>
+          <Modal.Title>
+            <CreditCard size={24} className="me-2 text-primary" />
+            Mark as Paid
+          </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {selectedPayroll && (
             <div>
-              <p>Mark payroll as paid for <strong>{selectedPayroll.employeeName || `Employee ${selectedPayroll.EmployeeId}`}</strong></p>
+              <Alert variant="success">
+                <strong>Payment Processing:</strong> Mark this payroll as paid after completing the payment process.
+              </Alert>
+              
+              <Card className="border-success mb-3">
+                <Card.Header className="bg-success text-white">
+                  <h6 className="mb-0">Payment Details</h6>
+                </Card.Header>
+                <Card.Body>
+                  <p><strong>Employee:</strong> {selectedPayroll.EmployeeName || `Employee ${selectedPayroll.EmployeeId}`}</p>
+                  <p><strong>Amount to Pay:</strong> <span className="h5 text-success">{formatCurrency(selectedPayroll.NetPay || 0)}</span></p>
+                </Card.Body>
+              </Card>
+              
               <Form.Group className="mb-3">
-                <Form.Label>Payment Mode</Form.Label>
-                <Form.Select id="paymentMode">
+                <Form.Label>Payment Mode *</Form.Label>
+                <Form.Select 
+                  value={paymentMode}
+                  onChange={(e) => setPaymentMode(e.target.value)}
+                  required
+                >
                   <option value="">Select Payment Mode</option>
                   <option value="Bank Transfer">Bank Transfer</option>
                   <option value="Cash">Cash</option>
                   <option value="Cheque">Cheque</option>
                   <option value="Digital Wallet">Digital Wallet</option>
                 </Form.Select>
+                {!paymentMode && (
+                  <Form.Text className="text-danger">
+                    Please select a payment mode to proceed.
+                  </Form.Text>
+                )}
               </Form.Group>
-              <Alert variant="success">
-                <p><strong>Amount to be paid:</strong> ${(selectedPayroll.NetPay || 0).toLocaleString()}</p>
-              </Alert>
             </div>
           )}
         </Modal.Body>
@@ -803,15 +1036,16 @@ const PayrollManagement = () => {
             Cancel
           </Button>
           <Button 
+             
             variant="primary" 
             onClick={() => {
-              const paymentMode = document.getElementById('paymentMode').value;
               if (paymentMode) {
                 handleMarkAsPaid(selectedPayroll.PayrollId, paymentMode);
               } else {
-                alert('Please select a payment mode');
+                toast.error('Please select a payment mode');
               }
             }}
+            disabled={!paymentMode}
           >
             <CreditCard size={16} className="me-1" />
             Mark as Paid
@@ -838,7 +1072,7 @@ const PayrollManagement = () => {
               <Modal.Body>
                 {currentPolicy && (
                   <Alert variant="info">
-                    <strong>Current Policy:</strong> PF {currentPolicy.DefaultPFPercent}%, Overtime ${currentPolicy.OvertimeRatePerHour}/hr
+                    <strong>Current Policy:</strong> PF {currentPolicy.DefaultPFPercent}%, Overtime {formatCurrency(currentPolicy.OvertimeRatePerHour)}/hr
                   </Alert>
                 )}
                 
@@ -860,7 +1094,7 @@ const PayrollManagement = () => {
                   </Col>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Overtime Rate per Hour ($)</Form.Label>
+                      <Form.Label>Overtime Rate per Hour (₹)</Form.Label>
                       <Field
                         type="number"
                         name="overtimeRatePerHour"

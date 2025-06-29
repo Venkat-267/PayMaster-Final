@@ -9,6 +9,7 @@ namespace PayMaster.Interface
         Task<List<PayrollDto>> GetPayrollHistoryAsync(int employeeId);
         Task<bool> VerifyPayrollAsync(int payrollId, int userId);
         Task<bool> MarkPayrollAsPaidAsync(int payrollId, string paymentMode, int paidByUserId);
+        Task<List<PayrollFullDto>> GetAllPayrollDetailsAsync();
 
     }
 }

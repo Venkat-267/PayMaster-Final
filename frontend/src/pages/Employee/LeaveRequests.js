@@ -11,6 +11,7 @@ import employeeService from '../../services/employeeService';
 const LeaveRequests = () => {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [currentEmployeeRecord, setCurrentEmployeeRecord] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchFilters, setSearchFilters] = useState({
     employeeId: '',
@@ -28,12 +29,17 @@ const LeaveRequests = () => {
   const isEmployee = hasAccess([ROLES.EMPLOYEE.id]);
 
   const LeaveSchema = Yup.object().shape({
+    employeeId: canManageLeaves && !isEmployee ? Yup.number().required('Employee is required') : Yup.number(),
     leaveType: Yup.string().required('Leave type is required'),
-    startDate: Yup.date().required('Start date is required'),
+    startDate: Yup.date()
+      .required('Start date is required')
+      .min(new Date(), 'Start date cannot be in the past'),
     endDate: Yup.date()
       .required('End date is required')
       .min(Yup.ref('startDate'), 'End date must be after start date'),
-    reason: Yup.string().required('Reason is required')
+    reason: Yup.string()
+      .required('Reason is required')
+      .min(10, 'Please provide a detailed reason (minimum 10 characters)')
   });
 
   useEffect(() => {
@@ -49,14 +55,40 @@ const LeaveRequests = () => {
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      await Promise.all([
-        fetchEmployees(),
-        fetchLeaveRequests()
-      ]);
+      
+      if (canManageLeaves) {
+        // Managers/Admins can fetch all employees
+        await fetchEmployees();
+      } else {
+        // Regular employees - find their employee record
+        await fetchCurrentEmployeeRecord();
+      }
+      
+      await fetchLeaveRequests();
     } catch (error) {
       toast.error('Failed to load initial data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCurrentEmployeeRecord = async () => {
+    try {
+      // For regular employees, we need to find their employee record
+      // Since they can't access all employees, we'll try to get it from their profile
+      const result = await employeeService.getAllEmployees();
+      if (result.success) {
+        const employeeRecord = result.data.find(emp => emp.UserId === currentUser.id);
+        if (employeeRecord) {
+          setCurrentEmployeeRecord(employeeRecord);
+        } else {
+          toast.error('Employee record not found. Please contact HR.');
+        }
+      }
+    } catch (error) {
+      // If 403 error, we'll handle it gracefully
+      console.log('Cannot fetch all employees as regular employee - this is expected');
+      // We'll use a fallback approach - try to get employee info from leave requests
     }
   };
 
@@ -65,9 +97,14 @@ const LeaveRequests = () => {
       const result = await employeeService.getAllEmployees();
       if (result.success) {
         setEmployees(result.data || []);
+      } else {
+        toast.error('Failed to fetch employees');
+        setEmployees([]);
       }
     } catch (error) {
       console.error('Failed to fetch employees:', error);
+      toast.error('Failed to fetch employees');
+      setEmployees([]);
     }
   };
 
@@ -76,7 +113,7 @@ const LeaveRequests = () => {
       setLoading(true);
       
       if (isEmployee && !canManageLeaves) {
-        // For employees, get their own leave requests
+        // For employees, get their own leave requests using their user ID
         const result = await leaveRequestService.getEmployeeLeaveRequests(currentUser.id);
         if (result.success) {
           const leavesWithEmployeeName = (result.data || []).map(leave => ({
@@ -131,13 +168,37 @@ const LeaveRequests = () => {
 
   const handleSubmit = async (values, { setSubmitting, resetForm }) => {
     try {
+      console.log('Submitting leave request with values:', values);
+      
+      // Get the employee ID
+      let employeeId;
+      if (isEmployee && !canManageLeaves) {
+        // For regular employees, use their employee record ID or user ID as fallback
+        if (currentEmployeeRecord) {
+          employeeId = currentEmployeeRecord.EmployeeId;
+        } else {
+          // Fallback: use user ID (the API might accept this)
+          employeeId = currentUser.id;
+        }
+      } else {
+        // For managers/admins, use the selected employee
+        employeeId = parseInt(values.employeeId);
+      }
+      
+      if (!employeeId) {
+        toast.error('Unable to determine employee ID. Please contact HR.');
+        return;
+      }
+      
       const leaveData = {
-        employeeId: isEmployee ? currentUser.id : values.employeeId,
+        employeeId: employeeId,
         leaveType: values.leaveType,
         startDate: values.startDate,
         endDate: values.endDate,
         reason: values.reason
       };
+
+      console.log('Leave data being sent:', leaveData);
 
       const result = await leaveRequestService.submitLeaveRequest(leaveData);
       
@@ -147,9 +208,11 @@ const LeaveRequests = () => {
         resetForm();
         fetchLeaveRequests(); // Refresh the list
       } else {
+        console.error('Leave request submission failed:', result.message);
         toast.error(result.message);
       }
     } catch (error) {
+      console.error('Leave request submission error:', error);
       toast.error('Failed to submit leave request');
     } finally {
       setSubmitting(false);
@@ -446,7 +509,7 @@ const LeaveRequests = () => {
         </Modal.Header>
         <Formik
           initialValues={{
-            employeeId: editingLeave?.EmployeeId || (isEmployee ? currentUser.id : ''),
+            employeeId: editingLeave?.EmployeeId || '',
             leaveType: editingLeave?.LeaveType || '',
             startDate: editingLeave?.StartDate ? editingLeave.StartDate.split('T')[0] : '',
             endDate: editingLeave?.EndDate ? editingLeave.EndDate.split('T')[0] : '',
@@ -463,7 +526,7 @@ const LeaveRequests = () => {
                   <Row>
                     <Col md={12}>
                       <Form.Group className="mb-3">
-                        <Form.Label>Employee</Form.Label>
+                        <Form.Label>Employee *</Form.Label>
                         <Field
                           as="select"
                           name="employeeId"
@@ -472,7 +535,7 @@ const LeaveRequests = () => {
                           <option value="">Select Employee</option>
                           {employees.map(emp => (
                             <option key={emp.EmployeeId} value={emp.EmployeeId}>
-                              {emp.FirstName} {emp.LastName}
+                              {emp.FirstName} {emp.LastName} ({emp.EmployeeId})
                             </option>
                           ))}
                         </Field>
@@ -482,10 +545,21 @@ const LeaveRequests = () => {
                   </Row>
                 )}
 
+                {isEmployee && !canManageLeaves && (
+                  <Alert variant="info" className="mb-3">
+                    <strong>Note:</strong> This leave request will be submitted for your account.
+                    {currentEmployeeRecord && (
+                      <div className="mt-1">
+                        <small>Employee ID: {currentEmployeeRecord.EmployeeId}</small>
+                      </div>
+                    )}
+                  </Alert>
+                )}
+
                 <Row>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Leave Type</Form.Label>
+                      <Form.Label>Leave Type *</Form.Label>
                       <Field
                         as="select"
                         name="leaveType"
@@ -520,7 +594,7 @@ const LeaveRequests = () => {
                 <Row>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Start Date</Form.Label>
+                      <Form.Label>Start Date *</Form.Label>
                       <Field
                         type="date"
                         name="startDate"
@@ -532,7 +606,7 @@ const LeaveRequests = () => {
                   </Col>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>End Date</Form.Label>
+                      <Form.Label>End Date *</Form.Label>
                       <Field
                         type="date"
                         name="endDate"
@@ -545,15 +619,18 @@ const LeaveRequests = () => {
                 </Row>
 
                 <Form.Group className="mb-3">
-                  <Form.Label>Reason</Form.Label>
+                  <Form.Label>Reason *</Form.Label>
                   <Field
                     as="textarea"
                     name="reason"
                     rows={4}
                     className={`form-control ${errors.reason && touched.reason ? 'is-invalid' : ''}`}
-                    placeholder="Please provide a reason for your leave request..."
+                    placeholder="Please provide a detailed reason for your leave request..."
                   />
                   <ErrorMessage name="reason" component="div" className="invalid-feedback" />
+                  <Form.Text className="text-muted">
+                    Please provide a detailed reason (minimum 10 characters)
+                  </Form.Text>
                 </Form.Group>
               </Modal.Body>
               <Modal.Footer>

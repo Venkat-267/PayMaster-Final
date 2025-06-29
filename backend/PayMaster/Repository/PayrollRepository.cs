@@ -176,5 +176,40 @@ namespace PayMaster.Repository
                     ProcessedDate = p.ProcessedDate
                 }).ToListAsync();
         }
+
+        public async Task<List<PayrollFullDto>> GetAllPayrollDetailsAsync()
+        {
+            return await _context.Payrolls
+                .Include(p => p.Employee)
+                .Include(p => p.Processor)
+                .Include(p => p.Verifier)
+                .OrderByDescending(p => p.Year)
+                .ThenByDescending(p => p.Month)
+                .Select(p => new PayrollFullDto
+                {
+                    PayrollId = p.PayRollId,
+                    EmployeeId = p.EmployeeId,
+                    EmployeeName = p.Employee.FirstName + " " + p.Employee.LastName,
+                    Month = p.Month,
+                    Year = p.Year,
+                    GrossPay = p.GrossPay,
+                    EmployeePF = p.EmployeePF,
+                    EmployerPF = p.EmployerPF,
+                    IncomeTax = p.IncomeTax,
+                    NetPay = p.NetPay,
+                    ProcessedBy = p.ProcessedBy,
+                    ProcessedByName = p.Processor != null ? p.Processor.UserName : null,
+                    ProcessedDate = p.ProcessedDate,
+                    IsVerified = p.IsVerified,
+                    VerifiedBy = p.VerifiedBy,
+                    VerifiedByName = p.Verifier != null ? p.Verifier.UserName : null,
+                    VerifiedDate = p.VerifiedDate,
+                    IsPaid = p.IsPaid,
+                    PaidDate = p.PaidDate,
+                    PaymentMode = p.PaymentMode
+                })
+                .ToListAsync();
+        }
+
     }
 }

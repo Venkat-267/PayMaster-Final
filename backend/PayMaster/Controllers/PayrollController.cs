@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using PayMaster.DTO;
 using PayMaster.Interface;
 using PayMaster.Models;
+using PayMaster.Repository;
 using System.Security.Claims;
 
 namespace PayMaster.Controllers
@@ -92,5 +93,14 @@ namespace PayMaster.Controllers
             var result = await _payrollRepo.GetPayrollHistoryAsync(employeeId);
             return Ok(result);
         }
+
+        [Authorize(Roles = "Admin,Payroll-Processor,Employee,Manager")]
+        [HttpGet("all-details")]
+        public async Task<IActionResult> GetAllPayrollDetails()
+        {
+            var payrolls = await _payrollRepo.GetAllPayrollDetailsAsync();
+            return Ok(payrolls);
+        }
+
     }
 }

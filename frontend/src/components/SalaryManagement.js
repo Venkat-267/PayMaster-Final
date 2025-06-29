@@ -1,30 +1,11 @@
-import React, { useState, useEffect } from "react";
-import {
-  Card,
-  Table,
-  Button,
-  Form,
-  Row,
-  Col,
-  Modal,
-  Badge,
-  Alert,
-  Spinner,
-} from "react-bootstrap";
-import {
-  Plus,
-  Edit2,
-  DollarSign,
-  Calendar,
-  TrendingUp,
-  History,
-  Eye,
-} from "lucide-react";
-import { Formik, Form as FormikForm, Field, ErrorMessage } from "formik";
-import * as Yup from "yup";
-import { toast } from "react-toastify";
-import salaryService from "../services/salaryService";
-import { useAuth } from "../context/AuthContext";
+import React, { useState, useEffect } from 'react';
+import { Card, Table, Button, Form, Row, Col, Modal, Badge, Alert, Spinner } from 'react-bootstrap';
+import { Plus, Edit2, DollarSign, Calendar, TrendingUp, History, Eye } from 'lucide-react';
+import { Formik, Form as FormikForm, Field, ErrorMessage } from 'formik';
+import * as Yup from 'yup';
+import { toast } from 'react-toastify';
+import salaryService from '../services/salaryService';
+import { useAuth } from '../context/AuthContext';
 
 const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
   const [currentSalary, setCurrentSalary] = useState(null);
@@ -34,27 +15,23 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
   const { hasAccess, ROLES, getCurrentUser } = useAuth();
 
   const currentUser = getCurrentUser();
-  const canManageSalary = hasAccess([
-    ROLES.ADMIN.id,
-    ROLES.HR_MANAGER.id,
-    ROLES.PAYROLL_PROCESSOR.id,
-  ]);
+  const canManageSalary = hasAccess([ROLES.ADMIN.id, ROLES.HR_MANAGER.id, ROLES.PAYROLL_PROCESSOR.id]);
 
   const SalarySchema = Yup.object().shape({
     basicPay: Yup.number()
-      .required("Basic pay is required")
-      .min(0, "Basic pay must be positive"),
+      .required('Basic pay is required')
+      .min(0, 'Basic pay must be positive'),
     hra: Yup.number()
-      .required("HRA is required")
-      .min(0, "HRA must be positive"),
+      .required('HRA is required')
+      .min(0, 'HRA must be positive'),
     allowances: Yup.number()
-      .required("Allowances is required")
-      .min(0, "Allowances must be positive"),
+      .required('Allowances is required')
+      .min(0, 'Allowances must be positive'),
     pfPercentage: Yup.number()
-      .required("PF percentage is required")
-      .min(0, "PF percentage must be positive")
-      .max(100, "PF percentage cannot exceed 100"),
-    effectiveFrom: Yup.date().required("Effective date is required"),
+      .required('PF percentage is required')
+      .min(0, 'PF percentage must be positive')
+      .max(100, 'PF percentage cannot exceed 100'),
+    effectiveFrom: Yup.date().required('Effective date is required')
   });
 
   useEffect(() => {
@@ -67,7 +44,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
     try {
       setLoading(true);
       const result = await salaryService.getCurrentSalaryStructure(employeeId);
-
+      
       if (result.success) {
         setCurrentSalary(result.data);
       } else {
@@ -75,7 +52,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
         setCurrentSalary(null);
       }
     } catch (error) {
-      toast.error("Failed to fetch salary structure");
+      toast.error('Failed to fetch salary structure');
       setCurrentSalary(null);
     } finally {
       setLoading(false);
@@ -98,11 +75,11 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
         hra: values.hra,
         allowances: values.allowances,
         pfPercentage: values.pfPercentage,
-        effectiveFrom: values.effectiveFrom,
+        effectiveFrom: values.effectiveFrom
       });
-
+      
       if (result.success) {
-        toast.success("Salary structure assigned successfully");
+        toast.success('Salary structure assigned successfully');
         setShowModal(false);
         resetForm();
         fetchCurrentSalary(); // Refresh the data
@@ -110,38 +87,32 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
         toast.error(result.message);
       }
     } catch (error) {
-      toast.error("Operation failed");
+      toast.error('Operation failed');
     } finally {
       setSubmitting(false);
     }
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR'
     }).format(amount);
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString();
   };
 
   const calculateGrossSalary = () => {
     if (!currentSalary) return 0;
-    return (
-      (currentSalary.BasicPay || 0) +
-      (currentSalary.HRA || 0) +
-      (currentSalary.Allowances || 0)
-    );
+    return (currentSalary.BasicPay || 0) + (currentSalary.HRA || 0) + (currentSalary.Allowances || 0);
   };
 
   const calculatePFDeduction = () => {
     if (!currentSalary) return 0;
-    return (
-      ((currentSalary.BasicPay || 0) * (currentSalary.PFPercentage || 0)) / 100
-    );
+    return (currentSalary.BasicPay || 0) * (currentSalary.PFPercentage || 0) / 100;
   };
 
   const calculateNetSalary = () => {
@@ -158,15 +129,13 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h4 className="mb-1">Salary Management</h4>
-          <p className="text-muted mb-0">
-            Managing salary structure for {employeeName}
-          </p>
+          <p className="text-muted mb-0">Managing salary structure for {employeeName}</p>
         </div>
         <div className="d-flex gap-2">
           {canManageSalary && (
             <Button variant="primary" onClick={handleAssignSalary}>
               <Plus size={18} className="me-1" />
-              {currentSalary ? "Update Salary" : "Assign Salary"}
+              {currentSalary ? 'Update Salary' : 'Assign Salary'}
             </Button>
           )}
           <Button variant="outline-secondary" onClick={onClose}>
@@ -197,9 +166,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                     </div>
                     <div>
                       <h6 className="mb-1 text-muted">Basic Pay</h6>
-                      <h4 className="mb-0">
-                        {formatCurrency(currentSalary.BasicPay)}
-                      </h4>
+                      <h4 className="mb-0">{formatCurrency(currentSalary.BasicPay)}</h4>
                     </div>
                   </div>
                 </Card.Body>
@@ -214,9 +181,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                     </div>
                     <div>
                       <h6 className="mb-1 text-muted">Gross Salary</h6>
-                      <h4 className="mb-0">
-                        {formatCurrency(calculateGrossSalary())}
-                      </h4>
+                      <h4 className="mb-0">{formatCurrency(calculateGrossSalary())}</h4>
                     </div>
                   </div>
                 </Card.Body>
@@ -231,9 +196,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                     </div>
                     <div>
                       <h6 className="mb-1 text-muted">Net Salary</h6>
-                      <h4 className="mb-0">
-                        {formatCurrency(calculateNetSalary())}
-                      </h4>
+                      <h4 className="mb-0">{formatCurrency(calculateNetSalary())}</h4>
                     </div>
                   </div>
                 </Card.Body>
@@ -248,9 +211,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                     </div>
                     <div>
                       <h6 className="mb-1 text-muted">Effective From</h6>
-                      <h6 className="mb-0">
-                        {formatDate(currentSalary.EffectiveFrom)}
-                      </h6>
+                      <h6 className="mb-0">{formatDate(currentSalary.EffectiveFrom)}</h6>
                     </div>
                   </div>
                 </Card.Body>
@@ -264,20 +225,12 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Current Salary Structure</h5>
                 <div className="d-flex gap-2">
-                  <Button
-                    variant="outline-info"
-                    size="sm"
-                    onClick={handleViewDetails}
-                  >
+                  <Button variant="outline-info" size="sm" onClick={handleViewDetails}>
                     <Eye size={16} className="me-1" />
                     View Details
                   </Button>
                   {canManageSalary && (
-                    <Button
-                      variant="outline-primary"
-                      size="sm"
-                      onClick={handleAssignSalary}
-                    >
+                    <Button variant="outline-primary" size="sm" onClick={handleAssignSalary}>
                       <Edit2 size={16} className="me-1" />
                       Update
                     </Button>
@@ -292,27 +245,19 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                     <tbody>
                       <tr>
                         <td className="fw-bold">Basic Pay:</td>
-                        <td className="text-end">
-                          {formatCurrency(currentSalary.BasicPay)}
-                        </td>
+                        <td className="text-end">{formatCurrency(currentSalary.BasicPay)}</td>
                       </tr>
                       <tr>
                         <td className="fw-bold">HRA:</td>
-                        <td className="text-end">
-                          {formatCurrency(currentSalary.HRA)}
-                        </td>
+                        <td className="text-end">{formatCurrency(currentSalary.HRA)}</td>
                       </tr>
                       <tr>
                         <td className="fw-bold">Allowances:</td>
-                        <td className="text-end">
-                          {formatCurrency(currentSalary.Allowances)}
-                        </td>
+                        <td className="text-end">{formatCurrency(currentSalary.Allowances)}</td>
                       </tr>
                       <tr className="border-top">
                         <td className="fw-bold text-success">Gross Salary:</td>
-                        <td className="text-end fw-bold text-success">
-                          {formatCurrency(calculateGrossSalary())}
-                        </td>
+                        <td className="text-end fw-bold text-success">{formatCurrency(calculateGrossSalary())}</td>
                       </tr>
                     </tbody>
                   </Table>
@@ -321,18 +266,12 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                   <Table borderless className="mb-0">
                     <tbody>
                       <tr>
-                        <td className="fw-bold">
-                          PF Deduction ({currentSalary.PFPercentage}%):
-                        </td>
-                        <td className="text-end text-danger">
-                          -{formatCurrency(calculatePFDeduction())}
-                        </td>
+                        <td className="fw-bold">PF Deduction ({currentSalary.PFPercentage}%):</td>
+                        <td className="text-end text-danger">-{formatCurrency(calculatePFDeduction())}</td>
                       </tr>
                       <tr>
                         <td className="fw-bold">Tax Deduction (10%):</td>
-                        <td className="text-end text-danger">
-                          -{formatCurrency(calculateGrossSalary() * 0.1)}
-                        </td>
+                        <td className="text-end text-danger">-{formatCurrency(calculateGrossSalary() * 0.1)}</td>
                       </tr>
                       <tr>
                         <td></td>
@@ -340,9 +279,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                       </tr>
                       <tr className="border-top">
                         <td className="fw-bold text-primary">Net Salary:</td>
-                        <td className="text-end fw-bold text-primary">
-                          {formatCurrency(calculateNetSalary())}
-                        </td>
+                        <td className="text-en fw-bold text-primary">{formatCurrency(calculateNetSalary())}</td>
                       </tr>
                     </tbody>
                   </Table>
@@ -363,24 +300,15 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
               <Row>
                 <Col md={4} className="text-center">
                   <h6 className="text-muted">Annual Gross</h6>
-                  <h3 className="text-success">
-                    {formatCurrency(calculateGrossSalary() * 12)}
-                  </h3>
+                  <h3 className="text-success">{formatCurrency(calculateGrossSalary() * 12)}</h3>
                 </Col>
                 <Col md={4} className="text-center">
                   <h6 className="text-muted">Annual Deductions</h6>
-                  <h3 className="text-danger">
-                    {formatCurrency(
-                      (calculatePFDeduction() + calculateGrossSalary() * 0.1) *
-                        12
-                    )}
-                  </h3>
+                  <h3 className="text-danger">{formatCurrency((calculatePFDeduction() + calculateGrossSalary() * 0.1) * 12)}</h3>
                 </Col>
                 <Col md={4} className="text-center">
                   <h6 className="text-muted">Annual Net</h6>
-                  <h3 className="text-primary">
-                    {formatCurrency(calculateNetSalary() * 12)}
-                  </h3>
+                  <h3 className="text-primary">{formatCurrency(calculateNetSalary() * 12)}</h3>
                 </Col>
               </Row>
             </Card.Body>
@@ -408,18 +336,16 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
       <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>
-            {currentSalary
-              ? "Update Salary Structure"
-              : "Assign Salary Structure"}
+            {currentSalary ? 'Update Salary Structure' : 'Assign Salary Structure'}
           </Modal.Title>
         </Modal.Header>
         <Formik
           initialValues={{
-            basicPay: currentSalary?.BasicPay || "",
-            hra: currentSalary?.HRA || "",
-            allowances: currentSalary?.Allowances || "",
+            basicPay: currentSalary?.BasicPay || '',
+            hra: currentSalary?.HRA || '',
+            allowances: currentSalary?.Allowances || '',
             pfPercentage: currentSalary?.PFPercentage || 12,
-            effectiveFrom: new Date().toISOString().split("T")[0],
+            effectiveFrom: new Date().toISOString().split('T')[0]
           }}
           validationSchema={SalarySchema}
           onSubmit={handleSubmit}
@@ -429,51 +355,36 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
             <FormikForm>
               <Modal.Body>
                 <Alert variant="info">
-                  <strong>Note:</strong> Assigning a new salary structure will
-                  create a new record with the effective date specified.
+                  <strong>Note:</strong> Assigning a new salary structure will create a new record with the effective date specified.
                 </Alert>
 
                 <Row>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Basic Pay ($)</Form.Label>
+                      <Form.Label>Basic Pay (₹)</Form.Label>
                       <Field
                         type="number"
                         name="basicPay"
                         step="0.01"
                         min="0"
-                        className={`form-control ${
-                          errors.basicPay && touched.basicPay
-                            ? "is-invalid"
-                            : ""
-                        }`}
+                        className={`form-control ${errors.basicPay && touched.basicPay ? 'is-invalid' : ''}`}
                         placeholder="Enter basic pay"
                       />
-                      <ErrorMessage
-                        name="basicPay"
-                        component="div"
-                        className="invalid-feedback"
-                      />
+                      <ErrorMessage name="basicPay" component="div" className="invalid-feedback" />
                     </Form.Group>
                   </Col>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>HRA ($)</Form.Label>
+                      <Form.Label>HRA (₹)</Form.Label>
                       <Field
                         type="number"
                         name="hra"
                         step="0.01"
                         min="0"
-                        className={`form-control ${
-                          errors.hra && touched.hra ? "is-invalid" : ""
-                        }`}
+                        className={`form-control ${errors.hra && touched.hra ? 'is-invalid' : ''}`}
                         placeholder="Enter HRA amount"
                       />
-                      <ErrorMessage
-                        name="hra"
-                        component="div"
-                        className="invalid-feedback"
-                      />
+                      <ErrorMessage name="hra" component="div" className="invalid-feedback" />
                     </Form.Group>
                   </Col>
                 </Row>
@@ -481,24 +392,16 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                 <Row>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Allowances ($)</Form.Label>
+                      <Form.Label>Allowances (₹)</Form.Label>
                       <Field
                         type="number"
                         name="allowances"
                         step="0.01"
                         min="0"
-                        className={`form-control ${
-                          errors.allowances && touched.allowances
-                            ? "is-invalid"
-                            : ""
-                        }`}
+                        className={`form-control ${errors.allowances && touched.allowances ? 'is-invalid' : ''}`}
                         placeholder="Enter allowances"
                       />
-                      <ErrorMessage
-                        name="allowances"
-                        component="div"
-                        className="invalid-feedback"
-                      />
+                      <ErrorMessage name="allowances" component="div" className="invalid-feedback" />
                     </Form.Group>
                   </Col>
                   <Col md={6}>
@@ -510,18 +413,10 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                         step="0.1"
                         min="0"
                         max="100"
-                        className={`form-control ${
-                          errors.pfPercentage && touched.pfPercentage
-                            ? "is-invalid"
-                            : ""
-                        }`}
+                        className={`form-control ${errors.pfPercentage && touched.pfPercentage ? 'is-invalid' : ''}`}
                         placeholder="Enter PF percentage"
                       />
-                      <ErrorMessage
-                        name="pfPercentage"
-                        component="div"
-                        className="invalid-feedback"
-                      />
+                      <ErrorMessage name="pfPercentage" component="div" className="invalid-feedback" />
                     </Form.Group>
                   </Col>
                 </Row>
@@ -531,17 +426,9 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                   <Field
                     type="date"
                     name="effectiveFrom"
-                    className={`form-control ${
-                      errors.effectiveFrom && touched.effectiveFrom
-                        ? "is-invalid"
-                        : ""
-                    }`}
+                    className={`form-control ${errors.effectiveFrom && touched.effectiveFrom ? 'is-invalid' : ''}`}
                   />
-                  <ErrorMessage
-                    name="effectiveFrom"
-                    component="div"
-                    className="invalid-feedback"
-                  />
+                  <ErrorMessage name="effectiveFrom" component="div" className="invalid-feedback" />
                 </Form.Group>
 
                 {values.basicPay && values.hra && values.allowances && (
@@ -549,24 +436,10 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                     <h6>Salary Preview:</h6>
                     <Row>
                       <Col md={6}>
-                        <p>
-                          <strong>Gross Salary:</strong>{" "}
-                          {formatCurrency(
-                            (parseFloat(values.basicPay) || 0) +
-                              (parseFloat(values.hra) || 0) +
-                              (parseFloat(values.allowances) || 0)
-                          )}
-                        </p>
+                        <p><strong>Gross Salary:</strong> {formatCurrency((parseFloat(values.basicPay) || 0) + (parseFloat(values.hra) || 0) + (parseFloat(values.allowances) || 0))}</p>
                       </Col>
                       <Col md={6}>
-                        <p>
-                          <strong>PF Deduction:</strong>{" "}
-                          {formatCurrency(
-                            ((parseFloat(values.basicPay) || 0) *
-                              (parseFloat(values.pfPercentage) || 0)) /
-                              100
-                          )}
-                        </p>
+                        <p><strong>PF Deduction:</strong> {formatCurrency((parseFloat(values.basicPay) || 0) * (parseFloat(values.pfPercentage) || 0) / 100)}</p>
                       </Col>
                     </Row>
                   </Alert>
@@ -577,11 +450,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                   Cancel
                 </Button>
                 <Button variant="primary" type="submit" disabled={isSubmitting}>
-                  {isSubmitting
-                    ? "Saving..."
-                    : currentSalary
-                    ? "Update Salary"
-                    : "Assign Salary"}
+                  {isSubmitting ? 'Saving...' : (currentSalary ? 'Update Salary' : 'Assign Salary')}
                 </Button>
               </Modal.Footer>
             </FormikForm>
@@ -590,11 +459,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
       </Modal>
 
       {/* Salary Detail Modal */}
-      <Modal
-        show={showDetailModal}
-        onHide={() => setShowDetailModal(false)}
-        size="lg"
-      >
+      <Modal show={showDetailModal} onHide={() => setShowDetailModal(false)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Salary Structure Details</Modal.Title>
         </Modal.Header>
@@ -612,27 +477,19 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                         <tbody>
                           <tr>
                             <td>Basic Pay:</td>
-                            <td className="text-end fw-bold">
-                              {formatCurrency(currentSalary.BasicPay)}
-                            </td>
+                            <td className="text-end fw-bold">{formatCurrency(currentSalary.BasicPay)}</td>
                           </tr>
                           <tr>
                             <td>HRA:</td>
-                            <td className="text-end fw-bold">
-                              {formatCurrency(currentSalary.HRA)}
-                            </td>
+                            <td className="text-end fw-bold">{formatCurrency(currentSalary.HRA)}</td>
                           </tr>
                           <tr>
                             <td>Allowances:</td>
-                            <td className="text-end fw-bold">
-                              {formatCurrency(currentSalary.Allowances)}
-                            </td>
+                            <td className="text-end fw-bold">{formatCurrency(currentSalary.Allowances)}</td>
                           </tr>
                           <tr className="border-top">
                             <td className="fw-bold">Total Earnings:</td>
-                            <td className="text-end fw-bold text-success">
-                              {formatCurrency(calculateGrossSalary())}
-                            </td>
+                            <td className="text-end fw-bold text-success">{formatCurrency(calculateGrossSalary())}</td>
                           </tr>
                         </tbody>
                       </Table>
@@ -649,15 +506,11 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                         <tbody>
                           <tr>
                             <td>PF ({currentSalary.PFPercentage}%):</td>
-                            <td className="text-end fw-bold">
-                              {formatCurrency(calculatePFDeduction())}
-                            </td>
+                            <td className="text-end fw-bold">{formatCurrency(calculatePFDeduction())}</td>
                           </tr>
                           <tr>
                             <td>Tax (10%):</td>
-                            <td className="text-end fw-bold">
-                              {formatCurrency(calculateGrossSalary() * 0.1)}
-                            </td>
+                            <td className="text-end fw-bold">{formatCurrency(calculateGrossSalary() * 0.1)}</td>
                           </tr>
                           <tr>
                             <td></td>
@@ -665,12 +518,7 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                           </tr>
                           <tr className="border-top">
                             <td className="fw-bold">Total Deductions:</td>
-                            <td className="text-end fw-bold text-danger">
-                              {formatCurrency(
-                                calculatePFDeduction() +
-                                  calculateGrossSalary() * 0.1
-                              )}
-                            </td>
+                            <td className="text-end fw-bold text-danger">{formatCurrency(calculatePFDeduction() + calculateGrossSalary() * 0.1)}</td>
                           </tr>
                         </tbody>
                       </Table>
@@ -684,32 +532,23 @@ const SalaryManagement = ({ employeeId, employeeName, onClose }) => {
                   <h6 className="mb-0">Net Salary</h6>
                 </Card.Header>
                 <Card.Body className="text-center">
-                  <h3 className="text-success mb-0">
-                    {formatCurrency(calculateNetSalary())}
-                  </h3>
+                  <h3 className="text-success mb-0">{formatCurrency(calculateNetSalary())}</h3>
                   <p className="text-muted mb-0">Monthly Take-home</p>
                 </Card.Body>
               </Card>
 
               <div className="mt-4">
                 <h6>Additional Information:</h6>
-                <p>
-                  <strong>Salary ID:</strong> {currentSalary.SalaryId}
-                </p>
-                <p>
-                  <strong>Employee ID:</strong> {currentSalary.EmployeeId}
-                </p>
-                <p>
-                  <strong>Effective From:</strong>{" "}
-                  {formatDate(currentSalary.EffectiveFrom)}
-                </p>
+                <p><strong>Salary ID:</strong> {currentSalary.SalaryId}</p>
+                <p><strong>Employee ID:</strong> {currentSalary.EmployeeId}</p>
+                <p><strong>Effective From:</strong> {formatDate(currentSalary.EffectiveFrom)}</p>
               </div>
             </div>
           )}
         </Modal.Body>
         <Modal.Footer>
           {canManageSalary && (
-            <Button
+            <Button 
               variant="primary"
               onClick={() => {
                 setShowDetailModal(false);

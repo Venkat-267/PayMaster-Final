@@ -23,39 +23,39 @@ const payrollService = {
     }
   },
 
-  // Get all payrolls by fetching history for all employees
-  getAllPayrolls: async (employees = []) => {
+  // Get all payrolls using the new detailed endpoint
+  getAllPayrolls: async () => {
     try {
-      const allPayrolls = [];
+      const response = await api.get('/Payroll/all-details');
       
-      // Fetch payroll history for each employee
-      for (const employee of employees) {
-        try {
-          const result = await payrollService.getPayrollHistory(employee.EmployeeId);
-          if (result.success && result.data) {
-            // Add employee information to each payroll record
-            const payrollsWithEmployeeInfo = result.data.map(payroll => ({
-              ...payroll,
-              employeeName: `${employee.FirstName} ${employee.LastName}`,
-              employeeCode: `EMP${employee.EmployeeId.toString().padStart(3, '0')}`,
-              employeeEmail: employee.Email,
-              department: employee.Department
-            }));
-            allPayrolls.push(...payrollsWithEmployeeInfo);
-          }
-        } catch (error) {
-          console.error(`Failed to fetch payroll for employee ${employee.EmployeeId}:`, error);
+      // Map the API response to include proper status and employee info
+      const payrollsWithStatus = (response.data || []).map(payroll => {
+        // Determine status based on API fields
+        let status = 'Created'; // Default
+        
+        if (payroll.IsPaid) {
+          status = 'Paid';
+        } else if (payroll.IsVerified) {
+          status = 'Verified';
         }
-      }
+        
+        return {
+          ...payroll,
+          Status: status,
+          employeeName: payroll.EmployeeName,
+          employeeCode: `EMP${payroll.EmployeeId.toString().padStart(3, '0')}`,
+          department: 'Unknown' // API doesn't provide department in this endpoint
+        };
+      });
 
       return {
         success: true,
-        data: allPayrolls.sort((a, b) => new Date(b.ProcessedDate) - new Date(a.ProcessedDate))
+        data: payrollsWithStatus.sort((a, b) => new Date(b.ProcessedDate) - new Date(a.ProcessedDate))
       };
     } catch (error) {
       return {
         success: false,
-        message: error.message || 'Failed to fetch all payrolls'
+        message: error.response?.data?.Message || error.message || 'Failed to fetch all payrolls'
       };
     }
   },
@@ -64,9 +64,16 @@ const payrollService = {
   getPayrollForEmployee: async (employeeId, month, year) => {
     try {
       const response = await api.get(`/Payroll/${employeeId}/${month}/${year}`);
+      
+      // Add status to the response
+      const payrollWithStatus = {
+        ...response.data,
+        Status: 'Created' // Default status for individual payroll
+      };
+      
       return {
         success: true,
-        data: response.data
+        data: payrollWithStatus
       };
     } catch (error) {
       return {
@@ -80,9 +87,16 @@ const payrollService = {
   getPayrollHistory: async (employeeId) => {
     try {
       const response = await api.get(`/Payroll/history/${employeeId}`);
+      
+      // Add status to each payroll record
+      const payrollsWithStatus = (response.data || []).map(payroll => ({
+        ...payroll,
+        Status: 'Created' // Default status for history
+      }));
+      
       return {
         success: true,
-        data: response.data
+        data: payrollsWithStatus
       };
     } catch (error) {
       return {
